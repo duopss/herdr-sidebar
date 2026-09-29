@@ -900,9 +900,7 @@ impl App {
         }
     }
 
-    /// Hide the sidebar: snooze this tab (so the quiet ensure hook doesn't
-    /// immediately re-dock a fresh one) and close our own pane. The herdr
-    /// prefix+b keybinding (→ the toggle action) brings it back.
+    /// Hide the sidebar in every tab; the shared action brings it back.
     fn hide(&mut self) {
         if self.persist_scm()
             && let Err(error) = herdr_sidebar::ensure::hide_shared()
@@ -2146,7 +2144,7 @@ impl App {
             ),
             (
                 Setting::AutoOpen,
-                "Auto-open sidebar",
+                "Sidebar visible",
                 if self.sidebar_state.auto_open {
                     "on"
                 } else {
@@ -2253,8 +2251,13 @@ impl App {
                     sidebar::update_state(|state| state.show_hotkeys = !state.show_hotkeys);
             }
             Setting::AutoOpen => {
-                self.sidebar_state =
-                    sidebar::update_state(|state| state.auto_open = !state.auto_open);
+                if self.sidebar_state.auto_open && !self.persist_scm() {
+                    return;
+                }
+                if let Err(error) = herdr_sidebar::ensure::run_shared_toggle() {
+                    self.flash = Some((format!("sidebar toggle failed: {error}"), true));
+                }
+                self.sidebar_state = sidebar::load_state();
             }
             Setting::StrictToggle => {
                 self.sidebar_state =
