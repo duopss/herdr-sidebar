@@ -165,7 +165,10 @@ pub fn run(mode: Mode) -> std::io::Result<()> {
     let Some(_lock) = LaunchLock::acquire(wait_for_lock) else {
         return Ok(());
     };
-    let state = crate::state::load_state();
+    let mut state = crate::state::load_state();
+    if activation.is_some() && !state.auto_open {
+        state = crate::state::update_state(|state| state.auto_open = true);
+    }
     let view = match mode {
         Mode::Ensure => View::Explorer,
         Mode::Toggle(view) => view,

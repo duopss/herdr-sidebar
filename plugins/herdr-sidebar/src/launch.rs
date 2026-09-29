@@ -1104,6 +1104,65 @@ fn strip_verbatim(path: &str) -> &str {
 mod tests {
     use super::*;
 
+    #[test]
+    fn workspace_root_prefers_the_worktree_checkout_path() {
+        let root = std::env::temp_dir();
+        let workspace = serde_json::json!({
+            "result": { "workspace": {
+                "workspace_id": "w1",
+                "worktree": { "checkout_path": root.display().to_string() }
+            }}
+        });
+        let panes = serde_json::json!({ "result": { "panes": [] } });
+
+        assert_eq!(
+            workspace_root(&workspace.to_string(), "w1", &panes.to_string()),
+            Some(root)
+        );
+    }
+
+    #[test]
+    fn workspace_root_uses_initial_regular_workspace_pane_cwd() {
+        let root = std::env::temp_dir();
+        let workspace = serde_json::json!({
+            "result": { "workspace": { "workspace_id": "w1", "worktree": null } }
+        });
+        let panes = serde_json::json!({ "result": { "panes": [
+            { "pane_id": "w1:p1", "workspace_id": "w1", "cwd": root.display().to_string(), "foreground_cwd": "/temporary/cd" },
+            { "pane_id": "w1:p2", "workspace_id": "w1", "cwd": "/sidebar", "label": "Sidebar" },
+            { "pane_id": "w2:p1", "workspace_id": "w2", "cwd": "/other" }
+        ]}});
+
+        assert_eq!(
+            workspace_root(&workspace.to_string(), "w1", &panes.to_string()),
+            Some(root)
+        );
+    }
+
+    #[test]
+    fn workspace_root_rejects_metadata_for_another_workspace() {
+        let workspace = serde_json::json!({
+            "result": { "workspace": {
+                "workspace_id": "w2",
+                "worktree": { "checkout_path": std::env::temp_dir().display().to_string() }
+            }}
+        });
+
+        assert_eq!(workspace_root(&workspace.to_string(), "w1", "{}"), None);
+    }
+
+    #[test]
+    fn sidebar_panes_excludes_editor_and_preview_panes() {
+        let panes = serde_json::json!({ "result": { "panes": [
+            { "pane_id": "w1:p1", "label": "Sidebar" },
+            { "pane_id": "w1:p2", "label": "Source Control" },
+            { "pane_id": "w1:p3", "label": "app.rs · editor" },
+            { "pane_id": "w1:p4", "label": "Preview · app.rs" }
+        ]}});
+
+        assert_eq!(sidebar_panes(&panes.to_string()), ["w1:p1", "w1:p2"]);
+    }
+
     /// Strict toggle rewrites only the FOCUS decision; OPEN, CLOSE, and
     /// REPLACE (and garbage) must reach the launchers untouched.
     #[test]

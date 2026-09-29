@@ -909,7 +909,9 @@ pub fn parse_state(json: &str) -> State {
         auto_open: value
             .get("auto_open")
             .and_then(|v| v.as_bool())
-            .unwrap_or(default.auto_open),
+            // Before shared visibility was introduced, omitting this key
+            // meant the old default: keep the sidebar visible on focus.
+            .unwrap_or(true),
         strict_toggle: value
             .get("strict_toggle")
             .and_then(|v| v.as_bool())
@@ -917,11 +919,11 @@ pub fn parse_state(json: &str) -> State {
         focus_on_open: value
             .get("focus_on_open")
             .and_then(|v| v.as_bool())
-            .unwrap_or(default.focus_on_open),
+            .unwrap_or(true),
         follow_cwd: value
             .get("follow_cwd")
             .and_then(|v| v.as_bool())
-            .unwrap_or(default.follow_cwd),
+            .unwrap_or(true),
         git_deco: value
             .get("git_deco")
             .and_then(|v| v.as_bool())
@@ -929,7 +931,7 @@ pub fn parse_state(json: &str) -> State {
         dock_right: value
             .get("dock_right")
             .and_then(|v| v.as_bool())
-            .unwrap_or(default.dock_right),
+            .unwrap_or(false),
         sidebar_width: value
             .get("sidebar_width")
             .and_then(|v| v.as_u64())
@@ -944,7 +946,7 @@ pub fn parse_state(json: &str) -> State {
         custom_editor_on_click: value
             .get("custom_editor_on_click")
             .and_then(|v| v.as_bool())
-            .unwrap_or(default.custom_editor_on_click),
+            .unwrap_or(false),
     }
 }
 
@@ -1092,14 +1094,18 @@ mod tests {
         };
         let json = "{\"merged\":true,\"active\":\"source-control\",\"search_active\":true,\"hotkeys\":true,\"git_footer\":false,\"font_prompt\":true,\"auto_open\":false,\"strict_toggle\":true,\"focus_on_open\":false,\"follow_cwd\":false,\"git_deco\":false,\"dock_right\":true,\"sidebar_width\":44,\"colors\":\"terminal\",\"preview_placement\":\"pane\",\"custom_editor_on_click\":true,\"icons\":\"emoji\"}";
         assert_eq!(parse_state(json), state);
+        assert!(!State::default().auto_open);
         assert!(parse_state("\u{feff}{\"merged\":true}").merged);
-        // Files written before the flag existed keep auto-open AND the git
-        // decorations on.
+        // Files written before the flag existed keep the historical visible
+        // behavior; a brand-new state uses State::default() and starts closed.
         assert!(parse_state("{\"merged\":true}").auto_open);
         // Files written before the toggle settings existed keep the
         // historical toggle behavior: focus an open sidebar, focus on open.
         assert!(!parse_state("{\"merged\":true}").strict_toggle);
         assert!(parse_state("{\"merged\":true}").focus_on_open);
+        assert!(parse_state("{\"merged\":true}").follow_cwd);
+        assert!(!parse_state("{\"merged\":true}").dock_right);
+        assert!(!parse_state("{\"merged\":true}").custom_editor_on_click);
         assert_eq!(
             parse_state("{\"merged\":true}").color_theme,
             ColorTheme::VsCode
@@ -1147,7 +1153,9 @@ mod tests {
             PreviewPlacement::Tab
         );
         assert_eq!(parse_state("garbage"), State::default());
-        assert_eq!(parse_state("{\"active\":\"bogus\"}"), State::default());
+        let unknown_active = parse_state("{\"active\":\"bogus\"}");
+        assert_eq!(unknown_active.active, View::Explorer);
+        assert!(unknown_active.auto_open);
     }
 
     #[test]
