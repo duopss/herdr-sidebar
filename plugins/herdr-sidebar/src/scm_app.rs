@@ -900,11 +900,13 @@ impl App {
         }
     }
 
-    /// Hide the sidebar: snooze this tab (so the quiet ensure hook doesn't
-    /// immediately re-dock a fresh one) and close our own pane. The herdr
-    /// prefix+b keybinding (→ the toggle action) brings it back.
+    /// Hide the sidebar in every tab; the shared action brings it back.
     fn hide(&mut self) {
-        self.close(true);
+        if self.persist_scm()
+            && let Err(error) = herdr_sidebar::ensure::hide_shared()
+        {
+            self.flash = Some((format!("hide failed: {error}"), true));
+        }
     }
 
     fn close(&mut self, snooze: bool) {
@@ -1316,7 +1318,11 @@ impl App {
             && key.modifiers.contains(KeyModifiers::CONTROL)
             && !key.modifiers.contains(KeyModifiers::ALT)
         {
-            self.close(false);
+            if sidebar::load_state().auto_open {
+                self.hide();
+            } else {
+                self.close(false);
+            }
             return None;
         }
         self.flash = None;
@@ -2138,7 +2144,7 @@ impl App {
             ),
             (
                 Setting::AutoOpen,
-                "Auto-open sidebar",
+                "Sidebar visible",
                 if self.sidebar_state.auto_open {
                     "on"
                 } else {
@@ -2245,8 +2251,13 @@ impl App {
                     sidebar::update_state(|state| state.show_hotkeys = !state.show_hotkeys);
             }
             Setting::AutoOpen => {
-                self.sidebar_state =
-                    sidebar::update_state(|state| state.auto_open = !state.auto_open);
+                if self.sidebar_state.auto_open && !self.persist_scm() {
+                    return;
+                }
+                if let Err(error) = herdr_sidebar::ensure::run_shared_toggle() {
+                    self.flash = Some((format!("sidebar toggle failed: {error}"), true));
+                }
+                self.sidebar_state = sidebar::load_state();
             }
             Setting::StrictToggle => {
                 self.sidebar_state =
@@ -2971,7 +2982,8 @@ impl App {
         );
         let other = MY_VIEW.other();
         #[cfg(unix)]
-        let _ = herdr_sidebar::ipc::open_plugin_pane(&ctl.pane_id, other, &self.cwd, false, None);
+        let _ =
+            herdr_sidebar::ipc::open_plugin_pane(&ctl.pane_id, other, &self.cwd, false, None, None);
         #[cfg(windows)]
         {
             let response = herdr_sidebar::ipc::call_text(

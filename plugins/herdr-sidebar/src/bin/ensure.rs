@@ -5,6 +5,10 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--toggle-shared") {
+        let _ = herdr_sidebar::ensure::run_shared_toggle();
+        return;
+    }
     let mode = match std::env::args().nth(1).as_deref() {
         Some("--toggle") => {
             herdr_sidebar::ensure::Mode::Toggle(herdr_sidebar::state::View::Explorer)

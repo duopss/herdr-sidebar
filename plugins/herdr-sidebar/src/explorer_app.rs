@@ -858,11 +858,11 @@ impl App {
         }
     }
 
-    /// Hide the sidebar: snooze this tab (so the quiet ensure hook doesn't
-    /// immediately re-dock a fresh one) and close our own pane. The herdr
-    /// prefix+b keybinding (→ the toggle action) brings it back.
+    /// Hide the sidebar in every tab; the shared action brings it back.
     fn hide(&mut self) {
-        self.close(true);
+        if let Err(error) = herdr_sidebar::ensure::hide_shared() {
+            self.notice = Some(format!("hide failed: {error}"));
+        }
     }
 
     fn close(&mut self, snooze: bool) {
@@ -983,6 +983,7 @@ impl App {
             &self.tree.root_path(),
             false,
             None,
+            None,
         );
         #[cfg(windows)]
         {
@@ -1032,7 +1033,11 @@ impl App {
             && key.modifiers.contains(KeyModifiers::CONTROL)
             && !key.modifiers.contains(KeyModifiers::ALT)
         {
-            self.close(false);
+            if sidebar::load_state().auto_open {
+                self.hide();
+            } else {
+                self.close(false);
+            }
             return None;
         }
         if (key.code == KeyCode::Char('p')
@@ -2478,7 +2483,7 @@ impl App {
             ),
             (
                 Setting::AutoOpen,
-                "Auto-open sidebar",
+                "Sidebar visible",
                 if self.sidebar_state.auto_open {
                     "on"
                 } else {
@@ -2599,8 +2604,10 @@ impl App {
                     sidebar::update_state(|state| state.show_hotkeys = !state.show_hotkeys);
             }
             Setting::AutoOpen => {
-                self.sidebar_state =
-                    sidebar::update_state(|state| state.auto_open = !state.auto_open);
+                if let Err(error) = herdr_sidebar::ensure::run_shared_toggle() {
+                    self.notice = Some(format!("sidebar toggle failed: {error}"));
+                }
+                self.sidebar_state = sidebar::load_state();
             }
             Setting::StrictToggle => {
                 self.sidebar_state =

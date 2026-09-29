@@ -15,7 +15,7 @@ use std::io::Read;
 use std::rc::Rc;
 use std::time::Duration;
 
-use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event};
+use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode};
 use herdr_sidebar::{ensure, launch, state, viewer};
 use state::{Exit, View};
 
@@ -27,6 +27,7 @@ fn main() -> std::io::Result<()> {
     let mode = std::env::args().nth(1);
     match mode.as_deref() {
         Some("--ensure") => return ensure::run(ensure::Mode::Ensure),
+        Some("--toggle-shared") => return ensure::run_shared_toggle(),
         Some("--toggle") => {
             return ensure::run(ensure::Mode::Toggle(View::Explorer));
         }
@@ -204,6 +205,9 @@ fn main() -> std::io::Result<()> {
     // with no shell prompt between the split and the TUI. Keep the host's cwd
     // at the plugin root for relative-command resolution, then adopt the
     // requested project cwd inside the process.
+    if let Some(error) = std::env::var_os(state::ROOT_ERROR_ENV).filter(|error| !error.is_empty()) {
+        return run_root_error(&error.to_string_lossy(), view, persisted.merged);
+    }
     if let Some(cwd) = std::env::var_os(state::SPAWN_CWD_ENV).filter(|cwd| !cwd.is_empty()) {
         std::env::set_current_dir(cwd)?;
     }
@@ -296,6 +300,44 @@ fn main() -> std::io::Result<()> {
     result
 }
 
+/// Keep the pane visible with a clear diagnosis while refusing to browse a
+/// fallback directory. This path is reached when a workspace root vanished or
+/// became unreadable before the sidebar could open.
+fn run_root_error(message: &str, view: View, merged: bool) -> std::io::Result<()> {
+    let pane_id = std::env::var("HERDR_PANE_ID").unwrap_or_default();
+    let mut terminal = ratatui::init();
+    let explanation =
+        format!("Workspace unavailable\n\n{message}\n\nPress q to close the sidebar.");
+    loop {
+        terminal.draw(|frame| {
+            frame.render_widget(
+                ratatui::widgets::Paragraph::new(explanation.as_str()),
+                frame.area(),
+            );
+        })?;
+        if !pane_id.is_empty() {
+            herdr_sidebar::ipc::report_identity(&pane_id, view, merged);
+        }
+        if event::poll(Duration::from_secs(5))?
+            && let Event::Key(key) = event::read()?
+            && key.code == KeyCode::Char('q')
+        {
+            if state::load_state().auto_open {
+                ensure::hide_shared()?;
+            }
+            if !pane_id.is_empty() {
+                let _ = herdr_sidebar::ipc::call_text(
+                    "pane.close",
+                    serde_json::json!({ "pane_id": pane_id }),
+                );
+            }
+            break;
+        }
+    }
+    ratatui::restore();
+    Ok(())
+}
+
 fn read_stdin() -> std::io::Result<String> {
     let mut buf = String::new();
     std::io::stdin().read_to_string(&mut buf)?;
@@ -334,7 +376,11 @@ fn resolve_root(
     legacy_workspace_label: &str,
     spawn_cwd: &std::path::Path,
 ) -> std::io::Result<std::path::PathBuf> {
-    let root = if let Some(root) = herdr_sidebar::state::load_root(root_key)
+    let root = if std::env::var_os(state::WORKSPACE_ROOT_ENV).as_deref()
+        == Some(std::ffi::OsStr::new("1"))
+    {
+        spawn_cwd.to_path_buf()
+    } else if let Some(root) = herdr_sidebar::state::load_root(root_key)
         && root.is_dir()
     {
         root

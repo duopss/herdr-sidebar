@@ -155,17 +155,6 @@ pub fn run(mode: Mode) -> std::io::Result<()> {
         _ => None,
     };
     let explicit = toggle || activation.is_some();
-    let state = crate::state::load_state();
-    let view = match mode {
-        Mode::Ensure => View::Explorer,
-        Mode::Toggle(view) => view,
-        Mode::Activate(target) => target.pane_view(state.merged),
-    };
-    // Auto-open off (⚙ Settings): hooks leave closed tabs alone; the user's
-    // explicit toggle still works.
-    if !explicit && !state.auto_open {
-        return Ok(());
-    }
     let event_json = std::env::var("HERDR_PLUGIN_EVENT_JSON").unwrap_or_default();
     let creation_event = !explicit
         && matches!(
@@ -176,6 +165,18 @@ pub fn run(mode: Mode) -> std::io::Result<()> {
     let Some(_lock) = LaunchLock::acquire(wait_for_lock) else {
         return Ok(());
     };
+    let mut state = crate::state::load_state();
+    if activation.is_some() && !state.auto_open {
+        state = crate::state::update_state(|state| state.auto_open = true);
+    }
+    let view = match mode {
+        Mode::Ensure => View::Explorer,
+        Mode::Toggle(view) => view,
+        Mode::Activate(target) => target.pane_view(state.merged),
+    };
+    if !explicit && !state.auto_open {
+        return Ok(());
+    }
     let mut panes = ipc::call_text("pane.list", serde_json::json!({}))?;
     // The tab THIS event is about. During a workspace switch the globally
     // focused pane is still the space you came from, which docked sidebars
@@ -325,6 +326,36 @@ pub fn run(mode: Mode) -> std::io::Result<()> {
                 open(&panes, false, &scope, view, None, creation_event)?;
             }
         }
+    }
+    Ok(())
+}
+
+/// Toggle the per-account sidebar visibility. The launch lock serializes this
+/// transition with focus hooks, and update_state serializes it with settings.
+pub fn run_shared_toggle() -> std::io::Result<()> {
+    change_shared_visibility(None)
+}
+
+pub fn hide_shared() -> std::io::Result<()> {
+    change_shared_visibility(Some(false))
+}
+
+fn change_shared_visibility(requested: Option<bool>) -> std::io::Result<()> {
+    let Some(lock) = LaunchLock::acquire(true) else {
+        return Err(std::io::Error::other("could not lock sidebar launch"));
+    };
+    let state = crate::state::update_state(|state| {
+        state.auto_open = requested.unwrap_or(!state.auto_open);
+    });
+    if !state.auto_open {
+        let panes = ipc::call_text("pane.list", serde_json::json!({}))?;
+        for pane_id in launch::sidebar_panes(&panes) {
+            request_close(&panes, &pane_id)?;
+        }
+    }
+    drop(lock);
+    if state.auto_open {
+        run(Mode::Ensure)?;
     }
     Ok(())
 }
@@ -490,9 +521,26 @@ fn open(
     // the decision above answered for that scope, and the two must agree or
     // we dock into one tab with another tab's cwd.
     let fp = launch::focused_pane_in(panes_json, scope);
-    let Some((fid, fcwd)) = fp.split_once('\t') else {
+    let Some((fid, _fcwd)) = fp.split_once('\t') else {
         return Ok(());
     };
+    #[cfg(unix)]
+    let root: Result<PathBuf, String> = (|| {
+        let workspace_id = launch::workspace_of(panes_json, fid);
+        if workspace_id.is_empty() {
+            return Err("could not resolve sidebar workspace".to_string());
+        }
+        let workspace = ipc::call_text(
+            "workspace.get",
+            serde_json::json!({ "workspace_id": workspace_id }),
+        )
+        .map_err(|error| error.to_string())?;
+        let root = launch::workspace_root(&workspace, &workspace_id, panes_json)
+            .ok_or_else(|| "could not resolve workspace root".to_string())?;
+        std::fs::read_dir(&root)
+            .map_err(|error| format!("workspace root {}: {error}", root.display()))?;
+        Ok(root)
+    })();
     let state = crate::state::load_state();
     let dock_right = state.dock_right;
     let layout = ipc::call_text("pane.layout", serde_json::json!({ "pane_id": fid }))?;
@@ -516,9 +564,10 @@ fn open(
     let new_pane = ipc::open_plugin_pane(
         &target,
         view,
-        std::path::Path::new(fcwd),
+        root.as_deref().unwrap_or_else(|_| Path::new("")),
         view == View::Explorer && state.merged,
         initial.map(Target::env_value),
+        root.as_ref().err().map(String::as_str),
     )?;
     #[cfg(windows)]
     let new_pane = {
@@ -528,8 +577,8 @@ fn open(
             "ratio": ratio,
             "focus": false,
         });
-        if !fcwd.is_empty() {
-            split["cwd"] = serde_json::Value::String(fcwd.to_string());
+        if !_fcwd.is_empty() {
+            split["cwd"] = serde_json::Value::String(_fcwd.to_string());
         }
         let mut env = crate::state::spawn_env();
         if let Some(initial) = initial
