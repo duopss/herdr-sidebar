@@ -18,7 +18,7 @@
 
 id = "herdr-sidebar"
 name = "herdr-sidebar"
-version = "0.14.0"
+version = "0.14.1"
 description = "VS Code-style sidebar: file explorer + source control (with ✧ AI commit messages) in one herdr pane."
 min_herdr_version = "0.8.0"
 platforms = ["linux", "macos", "windows"]
@@ -54,16 +54,16 @@ platforms = ["linux", "macos"]
 [[actions]]
 id = "open-sidebar"
 platforms = ["linux", "macos"]
-title = "Toggle sidebar"
-description = "Open the sidebar at its configured dock edge (focus it if open; close it if focused)."
-command = ["./target/release/herdr-sidebar", "--toggle"]
+title = "Toggle IDE sidebar"
+description = "Show or hide the shared Files, Search and Git sidebar across tabs."
+command = ["./target/release/herdr-sidebar", "--toggle-shared"]
 
 [[actions]]
 id = "open-sidebar-windows"
 platforms = ["windows"]
-title = "Toggle sidebar"
-description = "Open the sidebar at its configured dock edge (focus it if open; close it if focused)."
-command = [".\\target\\release\\herdr-sidebar-ensure.exe", "--toggle"]
+title = "Toggle IDE sidebar"
+description = "Show or hide the shared Files, Search and Git sidebar across tabs."
+command = [".\\target\\release\\herdr-sidebar-ensure.exe", "--toggle-shared"]
 
 # Separated-panels mode: open the Source Control pane on its own (the ⚙
 # settings' "Unified sidebar: off"). The explorer side is what the sidebar

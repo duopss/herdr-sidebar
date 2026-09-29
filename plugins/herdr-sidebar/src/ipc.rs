@@ -146,6 +146,7 @@ pub fn open_plugin_pane(
     cwd: &std::path::Path,
     merged: bool,
     initial_activity: Option<&str>,
+    root_error: Option<&str>,
 ) -> std::io::Result<String> {
     let mut env = crate::state::spawn_env();
     if !cwd.as_os_str().is_empty()
@@ -155,6 +156,10 @@ pub fn open_plugin_pane(
             crate::state::SPAWN_CWD_ENV.to_string(),
             serde_json::Value::String(cwd.display().to_string()),
         );
+        env.insert(
+            crate::state::WORKSPACE_ROOT_ENV.to_string(),
+            serde_json::Value::String("1".to_string()),
+        );
     }
     if let Some(initial_activity) = initial_activity
         && let Some(env) = env.as_object_mut()
@@ -162,6 +167,14 @@ pub fn open_plugin_pane(
         env.insert(
             crate::state::INITIAL_ACTIVITY_ENV.to_string(),
             serde_json::Value::String(initial_activity.to_string()),
+        );
+    }
+    if let Some(root_error) = root_error
+        && let Some(env) = env.as_object_mut()
+    {
+        env.insert(
+            crate::state::ROOT_ERROR_ENV.to_string(),
+            serde_json::Value::String(root_error.to_string()),
         );
     }
     let response = call_text(

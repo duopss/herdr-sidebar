@@ -11,6 +11,7 @@
 //!   side needs a swap.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
 
 use serde::Deserialize;
 
@@ -171,6 +172,68 @@ impl Pane {
         matches!(self.label.as_deref(), Some("Sidebar" | "Explorer"))
             && !self.tokens.contains_key(METADATA_SOURCE)
     }
+}
+
+/// Every pane owned by this plugin, across all tabs. Editor and preview panes
+/// have different labels/tokens and are deliberately excluded.
+pub fn sidebar_panes(pane_list_json: &str) -> Vec<String> {
+    let Ok(msg) = serde_json::from_str::<PaneListMsg>(strip_bom(pane_list_json)) else {
+        return Vec::new();
+    };
+    msg.result
+        .panes
+        .into_iter()
+        .filter_map(|pane| {
+            let owned = pane.is_explorer()
+                || pane.tokens.contains_key(SC_METADATA_SOURCE)
+                || pane.label.as_deref() == Some(SC_PANE_LABEL);
+            owned.then_some(pane.pane_id?).filter(|id| is_flag_safe(id))
+        })
+        .collect()
+}
+
+/// Herdr 0.9.1 exposes the checkout path through workspace.get, but does not
+/// expose a cwd for ordinary workspaces. In that case the earliest non-plugin
+/// pane's spawn cwd is the stable directory; foreground_cwd changes after cd.
+pub fn workspace_root(
+    workspace_json: &str,
+    workspace_id: &str,
+    pane_list_json: &str,
+) -> Option<PathBuf> {
+    let value: serde_json::Value = serde_json::from_str(strip_bom(workspace_json)).ok()?;
+    let workspace = value.get("result")?.get("workspace")?;
+    if workspace.get("workspace_id")?.as_str()? != workspace_id {
+        return None;
+    }
+    if let Some(path) = workspace
+        .get("worktree")
+        .and_then(|worktree| worktree.get("checkout_path"))
+        .and_then(serde_json::Value::as_str)
+    {
+        return (!path.is_empty())
+            .then(|| PathBuf::from(strip_verbatim(path)))
+            .filter(|path| path.is_absolute());
+    }
+    let panes = serde_json::from_str::<PaneListMsg>(strip_bom(pane_list_json))
+        .ok()?
+        .result
+        .panes;
+    panes
+        .into_iter()
+        .filter(|pane| {
+            pane.workspace_id.as_deref() == Some(workspace_id)
+                && !pane.is_explorer()
+                && !pane.tokens.contains_key(SC_METADATA_SOURCE)
+                && !pane.label.as_deref().is_some_and(is_preview_label)
+        })
+        .filter_map(|pane| Some((pane.pane_id?, pane.cwd?)))
+        .min_by_key(|(id, _)| {
+            id.rsplit_once(":p")
+                .and_then(|(_, number)| number.parse::<u64>().ok())
+                .unwrap_or(u64::MAX)
+        })
+        .map(|(_, cwd)| PathBuf::from(strip_verbatim(&cwd)))
+        .filter(|path| path.is_absolute())
 }
 
 /// The unified pane's label (mirrors state::SIDEBAR_LABEL; kept here so the

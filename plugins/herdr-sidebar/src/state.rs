@@ -49,6 +49,8 @@ pub const EXECUTABLE_NAME: &str = "herdr-sidebar";
 /// resolves relative pane commands against the requested cwd, so launchers
 /// keep the process cwd at the plugin root and let the TUI move here itself.
 pub const SPAWN_CWD_ENV: &str = "HERDR_SIDEBAR_SPAWN_CWD";
+pub const WORKSPACE_ROOT_ENV: &str = "HERDR_SIDEBAR_WORKSPACE_ROOT";
+pub const ROOT_ERROR_ENV: &str = "HERDR_SIDEBAR_ROOT_ERROR";
 
 /// The viewer's control path travels in the pane environment rather than in
 /// a shell-quoted argv. Paths can contain spaces and every supported shell
@@ -322,15 +324,15 @@ impl Default for State {
             icons: None,
             color_theme: ColorTheme::VsCode,
             font_prompt_done: false,
-            auto_open: true,
+            auto_open: false,
             strict_toggle: false,
-            focus_on_open: true,
-            follow_cwd: true,
+            focus_on_open: false,
+            follow_cwd: false,
             git_deco: true,
-            dock_right: false,
+            dock_right: true,
             sidebar_width: DEFAULT_SIDEBAR_WIDTH,
             preview_placement: PreviewPlacement::Tab,
-            custom_editor_on_click: false,
+            custom_editor_on_click: true,
         }
     }
 }

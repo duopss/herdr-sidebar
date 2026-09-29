@@ -405,16 +405,18 @@ const EDITOR_PATH_TOKEN: &str = "hs-editor-path";
 const EDITOR_HEARTBEAT_EVERY: std::time::Duration = std::time::Duration::from_secs(5);
 
 pub fn configured_editor() -> Option<String> {
-    crate::state::load_editor_command().or_else(|| {
-        [EDITOR_COMMAND_ENV, "VISUAL", "EDITOR"]
-            .into_iter()
-            .find_map(|name| {
-                std::env::var(name)
-                    .ok()
-                    .map(|value| value.trim().to_string())
-                    .filter(|value| !value.is_empty())
-            })
-    })
+    crate::state::load_editor_command()
+        .or_else(|| {
+            [EDITOR_COMMAND_ENV, "VISUAL", "EDITOR"]
+                .into_iter()
+                .find_map(|name| {
+                    std::env::var(name)
+                        .ok()
+                        .map(|value| value.trim().to_string())
+                        .filter(|value| !value.is_empty())
+                })
+        })
+        .or_else(|| Some("nvim".to_string()))
 }
 
 fn editor_argv(command: &str, file: &Path) -> io::Result<Vec<String>> {
@@ -600,6 +602,20 @@ pub fn open_in_editor_tab(my_pane_id: &str, root: &Path, file: &Path) -> io::Res
         }),
     )?;
     let (tab_id, pane_id) = tab_create_ids(&response).ok_or_else(|| {
+        if let Some(tab_id) =
+            serde_json::from_str::<serde_json::Value>(response.trim_start_matches('\u{feff}'))
+                .ok()
+                .and_then(|value| {
+                    value
+                        .get("result")?
+                        .get("tab")?
+                        .get("tab_id")?
+                        .as_str()
+                        .map(str::to_string)
+                })
+        {
+            let _ = crate::ipc::call_text("tab.close", serde_json::json!({ "tab_id": tab_id }));
+        }
         io::Error::new(
             io::ErrorKind::InvalidData,
             "editor tab opened without pane metadata",

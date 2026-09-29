@@ -862,7 +862,9 @@ impl App {
     /// immediately re-dock a fresh one) and close our own pane. The herdr
     /// prefix+b keybinding (→ the toggle action) brings it back.
     fn hide(&mut self) {
-        self.close(true);
+        if let Err(error) = herdr_sidebar::ensure::hide_shared() {
+            self.notice = Some(format!("hide failed: {error}"));
+        }
     }
 
     fn close(&mut self, snooze: bool) {
@@ -983,6 +985,7 @@ impl App {
             &self.tree.root_path(),
             false,
             None,
+            None,
         );
         #[cfg(windows)]
         {
@@ -1032,7 +1035,11 @@ impl App {
             && key.modifiers.contains(KeyModifiers::CONTROL)
             && !key.modifiers.contains(KeyModifiers::ALT)
         {
-            self.close(false);
+            if sidebar::load_state().auto_open {
+                self.hide();
+            } else {
+                self.close(false);
+            }
             return None;
         }
         if (key.code == KeyCode::Char('p')

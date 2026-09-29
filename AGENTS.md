@@ -120,6 +120,15 @@ executed by Bash on Linux/macOS and mixed or CRLF endings fail before the launch
 
 ### Release flow
 
+- This fork is installed on the devhub through `duopss/herdr-sidebar/plugins/herdr-sidebar`.
+  Its release download scripts must point to `duopss/herdr-sidebar`; changing only the manifest
+  leaves the build step downloading another repository's binary.
+- Herdr 0.9.1 `workspace.get` includes `worktree.checkout_path` but no cwd for an ordinary
+  workspace. For the latter, use a pane's spawn `cwd`, never `foreground_cwd` (which changes
+  after shell `cd`). The fork's shared visibility uses the existing locked `auto_open` state:
+  quiet focus hooks read it after acquiring the launcher lock, and the shared toggle closes
+  only sidebar panes across tabs.
+
 - Bump the version in THREE files: `Cargo.toml`, `herdr-plugin.toml`, and `Cargo.lock`
   (any cargo command regenerates the lock entry). Commit as `vX.Y.Z`, `git tag vX.Y.Z`,
   push branch + tag.

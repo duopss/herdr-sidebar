@@ -25,7 +25,7 @@ keyboard Enter continues to use the built-in preview.
 Requires herdr 0.8 or newer. Source builds require Rust 1.89 or newer.
 
 ```
-herdr plugin install alexarthurs/herdr-sidebar/plugins/herdr-sidebar
+herdr plugin install duopss/herdr-sidebar/plugins/herdr-sidebar --ref v0.14.1
 ```
 
 or from a local checkout:
